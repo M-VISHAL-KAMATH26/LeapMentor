@@ -1,6 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { OAuth2Client } = require("google-auth-library");
 
 const User = require("../models/User");
 const OAuthAccount = require("../models/OAuthAccount");
@@ -15,6 +16,10 @@ const signToken = (userId) => {
   );
 };
 
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+
+//security filter we dont want to send the hashed password
 const sanitizeUser = (user) => {
   const obj = user.toObject ? user.toObject() : user;
   delete obj.password;
@@ -112,6 +117,120 @@ router.post("/login", async (req, res) => {
 });
 
 /**
+ * POST /api/auth/google
+ * Body: { credential, roles?, termsAccepted? }
+ *
+ * - credential is the Google ID token from frontend (GIS)
+ * - roles + termsAccepted required ONLY when creating a new user
+ */
+/**
+ * POST /api/auth/google
+ * Body: { credential, roles?, termsAccepted? }
+ */
+router.post("/google", async (req, res) => {
+  try {
+    const { credential, roles, termsAccepted } = req.body;
+    
+    if (!credential) {
+      return res.status(400).json({ message: "Missing Google credential" });
+    }
+
+    // --- CRITICAL DEBUGGING FOR COMPANY LAPTOP ---
+    // This decodes the token without verifying it so we can see what Google sent.
+    const decodedToken = jwt.decode(credential);
+    const tokenAudience = decodedToken?.aud;
+    const envAudience = process.env.GOOGLE_CLIENT_ID?.trim();
+
+    console.log("DEBUG: Token Audience (aud):", tokenAudience);
+    console.log("DEBUG: Env Client ID:", envAudience);
+
+    if (!envAudience) {
+      return res.status(500).json({ message: "GOOGLE_CLIENT_ID is undefined in .env" });
+    }
+    // --------------------------------------------
+
+    // 1) Verify Google ID token
+    // We pass an array to 'audience' to be safe across different platforms/envs
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: [envAudience, tokenAudience], // Accepting both ensures mismatch doesn't kill the process while debugging
+    });
+
+    const payload = ticket.getPayload();
+    
+    // Double-check: The payload's 'aud' must match our Env ID eventually
+    if (payload.aud !== envAudience) {
+       console.warn("⚠️ WARNING: Token was issued for a different Client ID. Check your .env!");
+    }
+
+    const email = payload?.email?.toLowerCase()?.trim();
+    const name = payload?.name || "User";
+    const googleSub = payload?.sub; 
+    const emailVerified = payload?.email_verified;
+
+    if (!email || !googleSub) {
+      return res.status(400).json({ message: "Invalid Google payload (missing email/sub)" });
+    }
+
+    // 2) Find or create user by email
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      if (termsAccepted !== true) {
+        return res.status(400).json({ message: "You must accept terms to continue" });
+      }
+
+      const incomingRoles = Array.isArray(roles) && roles.length ? [...new Set(roles)] : ["mentee"];
+      const validRoles = ["mentor", "mentee"];
+      for (const r of incomingRoles) {
+        if (!validRoles.includes(r)) {
+          return res.status(400).json({ message: "Invalid role. Use mentor and/or mentee." });
+        }
+      }
+
+      user = await User.create({
+        name,
+        email,
+        roles: incomingRoles,
+        isEmailVerified: !!emailVerified,
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+      });
+    }
+
+    // 3) Ensure OAuthAccount link exists
+    const existingOAuth = await OAuthAccount.findOne({
+      provider: "google",
+      providerId: googleSub,
+    });
+
+    if (!existingOAuth) {
+      await OAuthAccount.create({
+        user: user._id,
+        provider: "google",
+        providerId: googleSub,
+      });
+    }
+
+    // 4) Issue your JWT
+    const token = signToken(user._id);
+    const safeUser = sanitizeUser(user);
+
+    return res.json({
+      message: "Google login successful",
+      token,
+      user: safeUser,
+    });
+  } catch (err) {
+    console.error("FULL ERROR:", err);
+    return res.status(401).json({
+      message: "Google authentication failed",
+      error: err.message,
+    });
+  }
+});
+
+/**
  * POST /api/auth/social
  * Body: { provider: "google"|"linkedin"|"apple", providerId, email, name, roles?, termsAccepted? }
  *
@@ -122,7 +241,7 @@ router.post("/social", async (req, res) => {
   try {
     const { provider, providerId, email, name, roles, termsAccepted } = req.body;
 
-    const allowed = ["google", "linkedin", "apple"];
+const allowed = ["linkedin", "apple"];
     if (!allowed.includes(provider)) {
       return res.status(400).json({ message: "Invalid provider" });
     }

@@ -1,10 +1,19 @@
 // src/pages/RegisterMentor.jsx
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
 const RegisterMentor = () => {
   const navigate = useNavigate();
+  const googleBtnRef = useRef(null);
+  const googleInitializedRef = useRef(false);
+
+  // ✅ KEY FIX: mirror termsAccepted into a ref so the Google callback
+  // always reads the latest value without needing to re-initialize
+  const termsAcceptedRef = useRef(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -18,11 +27,86 @@ const RegisterMentor = () => {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
+    const newValue = type === "checkbox" ? checked : value;
+
+    // ✅ Keep ref in sync whenever checkbox changes
+    if (name === "termsAccepted") {
+      termsAcceptedRef.current = checked;
+    }
+
+    setForm((prev) => ({ ...prev, [name]: newValue }));
   };
+
+  // ✅ Initialize Google ONCE only — callback reads from ref so it's never stale
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) {
+      setMsg({ type: "error", text: "Missing VITE_GOOGLE_CLIENT_ID in frontend .env" });
+      return;
+    }
+
+    const initGoogle = () => {
+      if (!googleBtnRef.current) return;
+
+      /* global google */
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: async (response) => {
+          try {
+            setMsg({ type: "", text: "" });
+
+            // ✅ Read from ref — always latest, never stale
+            if (!termsAcceptedRef.current) {
+              setMsg({ type: "error", text: "Please accept the terms, then continue with Google." });
+              return;
+            }
+
+            setLoading(true);
+
+            const res = await axios.post(`${BASE_URL}/api/auth/google`, {
+              credential: response.credential,
+              roles: ["mentor"],
+              termsAccepted: true,
+            });
+
+            if (res.data?.token) localStorage.setItem("token", res.data.token);
+
+            console.log("✅ Google registration successful!", res.data);
+
+            setMsg({ type: "success", text: "Google signup successful! Redirecting..." });
+            setTimeout(() => navigate("/"), 700);
+          } catch (err) {
+            const apiMsg =
+              err?.response?.data?.message ||
+              err?.response?.data?.error ||
+              err?.message ||
+              "Google signup failed";
+            setMsg({ type: "error", text: apiMsg });
+          } finally {
+            setLoading(false);
+          }
+        },
+      });
+
+      if (!googleInitializedRef.current) {
+        google.accounts.id.renderButton(googleBtnRef.current, {
+          theme: "outline",
+          size: "large",
+          width: 400,
+          text: "continue_with",
+        });
+        googleInitializedRef.current = true;
+      }
+    };
+
+    // ✅ Handle script load timing safely
+    if (window.google) {
+      initGoogle();
+    } else {
+      const script = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      script?.addEventListener("load", initGoogle);
+      return () => script?.removeEventListener("load", initGoogle);
+    }
+  }, []); // ✅ empty deps — runs once, ref handles fresh values
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,9 +120,6 @@ const RegisterMentor = () => {
     try {
       setLoading(true);
 
-      const BASE_URL =
-        import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
       const payload = {
         name: form.name.trim(),
         email: form.email.trim(),
@@ -49,12 +130,11 @@ const RegisterMentor = () => {
 
       const res = await axios.post(`${BASE_URL}/api/auth/register`, payload);
 
-      if (res.data?.token) {
-        localStorage.setItem("token", res.data.token);
-      }
+      if (res.data?.token) localStorage.setItem("token", res.data.token);
+
+            console.log("✅ Google registration successful!", res.data);
 
       setMsg({ type: "success", text: "Registered successfully! Redirecting..." });
-
       setTimeout(() => {
         navigate("/verify-email", { state: { email: form.email.trim() } });
       }, 800);
@@ -69,12 +149,8 @@ const RegisterMentor = () => {
     }
   };
 
-  // Minimal placeholders (real OAuth redirect/flow later)
-  const handleSocial = (provider) => {
-    setMsg({
-      type: "error",
-      text: `${provider} login not wired yet (needs real OAuth flow).`,
-    });
+  const handleSocialPlaceholder = (provider) => {
+    setMsg({ type: "info", text: `${provider} login coming soon.` });
   };
 
   return (
@@ -90,6 +166,8 @@ const RegisterMentor = () => {
             className={`mt-4 text-sm rounded-md p-3 ${
               msg.type === "success"
                 ? "bg-green-50 text-green-700"
+                : msg.type === "info"
+                ? "bg-blue-50 text-blue-700"
                 : "bg-red-50 text-red-700"
             }`}
           >
@@ -97,26 +175,24 @@ const RegisterMentor = () => {
           </div>
         ) : null}
 
-        {/* Social buttons */}
         <div className="mt-5 space-y-2">
+          <div className={`${loading ? "opacity-60 pointer-events-none" : ""}`}>
+            <div ref={googleBtnRef} className="w-full" />
+          </div>
+
           <button
             type="button"
-            onClick={() => handleSocial("Google")}
+            onClick={() => handleSocialPlaceholder("LinkedIn")}
             className="w-full border rounded-lg py-2 text-sm"
-          >
-            Continue with Google
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSocial("LinkedIn")}
-            className="w-full border rounded-lg py-2 text-sm"
+            disabled={loading}
           >
             Continue with LinkedIn
           </button>
           <button
             type="button"
-            onClick={() => handleSocial("Apple")}
+            onClick={() => handleSocialPlaceholder("Apple")}
             className="w-full border rounded-lg py-2 text-sm"
+            disabled={loading}
           >
             Continue with Apple
           </button>
@@ -128,7 +204,6 @@ const RegisterMentor = () => {
           <div className="h-px bg-gray-200 flex-1" />
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="text-sm">Name</label>
@@ -167,6 +242,7 @@ const RegisterMentor = () => {
               minLength={6}
               required
             />
+            <p className="text-xs text-gray-400 mt-1">Minimum 6 characters</p>
           </div>
 
           <label className="flex items-start gap-2 text-sm mt-2">
@@ -195,10 +271,7 @@ const RegisterMentor = () => {
 
         <p className="text-sm text-gray-600 mt-4">
           Already have an account?{" "}
-          <span
-            className="underline cursor-pointer"
-            onClick={() => navigate("/login")}
-          >
+          <span className="underline cursor-pointer" onClick={() => navigate("/login")}>
             Login
           </span>
         </p>

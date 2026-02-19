@@ -1,9 +1,13 @@
-import { useState } from "react";
+// src/pages/RegisterMentee.jsx
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 const RegisterMentee = () => {
   const navigate = useNavigate();
+
+  const googleBtnRef = useRef(null);
+  const googleInitializedRef = useRef(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -15,6 +19,9 @@ const RegisterMentee = () => {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
+  const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm((prev) => ({
@@ -22,6 +29,67 @@ const RegisterMentee = () => {
       [name]: type === "checkbox" ? checked : value,
     }));
   };
+
+  // ✅ Real Google signup/login (GIS -> backend /api/auth/google)
+  useEffect(() => {
+    if (!window.google || !googleBtnRef.current) return;
+
+    if (!GOOGLE_CLIENT_ID) {
+      setMsg({ type: "error", text: "Missing VITE_GOOGLE_CLIENT_ID in frontend .env" });
+      return;
+    }
+
+    if (googleInitializedRef.current) return;
+    googleInitializedRef.current = true;
+
+    /* global google */
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: async (response) => {
+        try {
+          setMsg({ type: "", text: "" });
+
+          // require terms acceptance for first-time Google signup
+          if (!form.termsAccepted) {
+            setMsg({ type: "error", text: "Please accept the terms, then continue with Google." });
+            return;
+          }
+
+          setLoading(true);
+
+          const res = await axios.post(`${BASE_URL}/api/auth/google`, {
+            credential: response.credential,
+            roles: ["mentee"],
+            termsAccepted: true,
+          });
+
+          if (res.data?.token) localStorage.setItem("token", res.data.token);
+
+          setMsg({ type: "success", text: "Google signup successful! Redirecting..." });
+
+          setTimeout(() => {
+            navigate("/");
+          }, 700);
+        } catch (err) {
+          const apiMsg =
+            err?.response?.data?.message ||
+            err?.response?.data?.error ||
+            err?.message ||
+            "Google signup failed";
+          setMsg({ type: "error", text: apiMsg });
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+
+    google.accounts.id.renderButton(googleBtnRef.current, {
+      theme: "outline",
+      size: "large",
+      width: "100%",
+      text: "continue_with",
+    });
+  }, [BASE_URL, GOOGLE_CLIENT_ID, form.termsAccepted, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,9 +103,6 @@ const RegisterMentee = () => {
     try {
       setLoading(true);
 
-      // ✅ Update if your backend port/baseURL differs
-      const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
       const payload = {
         name: form.name.trim(),
         email: form.email.trim(),
@@ -48,14 +113,10 @@ const RegisterMentee = () => {
 
       const res = await axios.post(`${BASE_URL}/api/auth/register`, payload);
 
-      // store token for later use
-      if (res.data?.token) {
-        localStorage.setItem("token", res.data.token);
-      }
+      if (res.data?.token) localStorage.setItem("token", res.data.token);
 
       setMsg({ type: "success", text: "Registered successfully! Redirecting..." });
 
-      // optional: go to verify email page (if you want)
       setTimeout(() => {
         navigate("/verify-email", { state: { email: form.email.trim() } });
       }, 800);
@@ -70,16 +131,14 @@ const RegisterMentee = () => {
     }
   };
 
-  // Minimal “social buttons” placeholders (real OAuth later)
-  const handleSocial = (provider) => {
+  const handleSocialPlaceholder = (provider) => {
     setMsg({
       type: "error",
       text: `${provider} login not wired yet (needs real OAuth flow).`,
     });
   };
-
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+   <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md border rounded-xl p-6">
         <h1 className="text-2xl font-semibold">Register as Mentee</h1>
         <p className="text-sm text-gray-500 mt-1">
@@ -97,26 +156,22 @@ const RegisterMentee = () => {
             {msg.text}
           </div>
         ) : null}
-
-        {/* Social buttons (minimal UI) */}
-        <div className="mt-5 space-y-2">
+         <div className="mt-5 space-y-2">
+          {/* ✅ Real Google button */}
+          <div className={`${loading ? "opacity-60 pointer-events-none" : ""}`}>
+            <div ref={googleBtnRef} className="w-full" />
+          </div>
+       
           <button
             type="button"
-            onClick={() => handleSocial("Google")}
-            className="w-full border rounded-lg py-2 text-sm"
-          >
-            Continue with Google
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSocial("LinkedIn")}
+            onClick={() => handleSocialPlaceholder("LinkedIn")}
             className="w-full border rounded-lg py-2 text-sm"
           >
             Continue with LinkedIn
           </button>
           <button
             type="button"
-            onClick={() => handleSocial("Apple")}
+            onClick={() => handleSocialPlaceholder("Apple")}
             className="w-full border rounded-lg py-2 text-sm"
           >
             Continue with Apple
@@ -204,7 +259,8 @@ const RegisterMentee = () => {
           </span>
         </p>
       </div>
-    </div>
+      </div>
+    
   );
 };
 
