@@ -1,24 +1,46 @@
-import { useState } from "react";
-import axios from "axios";
+// src/pages/Login.jsx
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import useGoogleAuth from "../hooks/useGoogleAuth";
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+// ✅ Shared role-based redirect helper
+const redirectByRole = (roles, navigate) => {
+  if (roles.includes("mentor") && roles.includes("mentee")) {
+    navigate("/dashboard/mentor"); // or a role-picker page later
+  } else if (roles.includes("mentor")) {
+    navigate("/dashboard/mentor");
+  } else {
+    navigate("/dashboard/mentee");
+  }
+};
 
 const Login = () => {
   const navigate = useNavigate();
+  const googleBtnRef = useRef(null);
 
-  const [form, setForm] = useState({
-    email: "",
-    password: "",
-  });
-
+  const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
+  // ✅ Google login — redirect based on role from response
+  useGoogleAuth({
+    btnRef: googleBtnRef,
+    termsAcceptedRef: null,
+    roles: [],
+    onSuccess: (data) => {
+      setMsg({ type: "success", text: "Google login successful! Redirecting..." });
+      setTimeout(() => redirectByRole(data?.user?.roles || [], navigate), 700);
+    },
+    onError: (text) => setMsg({ type: "error", text }),
+    onLoadingChange: setLoading,
+  });
+
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
@@ -28,83 +50,67 @@ const Login = () => {
     try {
       setLoading(true);
 
-      const BASE_URL =
-        import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
       const res = await axios.post(`${BASE_URL}/api/auth/login`, {
         email: form.email.trim(),
         password: form.password,
       });
 
-      if (res.data?.token) {
-        localStorage.setItem("token", res.data.token);
-      }
+      if (res.data?.token) localStorage.setItem("token", res.data.token);
+      console.log("✅ Login successful!", res.data);
 
       setMsg({ type: "success", text: "Login successful! Redirecting..." });
 
-      setTimeout(() => {
-        navigate("/"); // redirect to home
-      }, 800);
-
+      // ✅ Role-based redirect for email/password login too
+      setTimeout(() => redirectByRole(res.data?.user?.roles || [], navigate), 800);
     } catch (err) {
-      const apiMsg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Invalid credentials";
+      const apiMsg = err?.response?.data?.message || err?.message || "Invalid credentials";
       setMsg({ type: "error", text: apiMsg });
     } finally {
       setLoading(false);
     }
   };
 
-  // Social placeholders (real OAuth later)
-  const handleSocial = (provider) => {
-    setMsg({
-      type: "error",
-      text: `${provider} login not wired yet (needs real OAuth flow).`,
-    });
+  const handleSocialPlaceholder = (provider) => {
+    setMsg({ type: "info", text: `${provider} login coming soon.` });
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md border rounded-xl p-6">
         <h1 className="text-2xl font-semibold">Login</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Welcome back to LeapMentor.
-        </p>
+        <p className="text-sm text-gray-500 mt-1">Welcome back to LeapMentor.</p>
 
-        {msg.text ? (
+        {msg.text && (
           <div
             className={`mt-4 text-sm rounded-md p-3 ${
               msg.type === "success"
                 ? "bg-green-50 text-green-700"
+                : msg.type === "info"
+                ? "bg-blue-50 text-blue-700"
                 : "bg-red-50 text-red-700"
             }`}
           >
             {msg.text}
           </div>
-        ) : null}
+        )}
 
-        {/* Social buttons */}
         <div className="mt-5 space-y-2">
+          <div className={loading ? "opacity-60 pointer-events-none" : ""}>
+            <div ref={googleBtnRef} className="w-full" />
+          </div>
           <button
             type="button"
-            onClick={() => handleSocial("Google")}
+            onClick={() => handleSocialPlaceholder("LinkedIn")}
             className="w-full border rounded-lg py-2 text-sm"
-          >
-            Continue with Google
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSocial("LinkedIn")}
-            className="w-full border rounded-lg py-2 text-sm"
+            disabled={loading}
           >
             Continue with LinkedIn
           </button>
           <button
             type="button"
-            onClick={() => handleSocial("Apple")}
+            onClick={() => handleSocialPlaceholder("Apple")}
             className="w-full border rounded-lg py-2 text-sm"
+            disabled={loading}
           >
             Continue with Apple
           </button>
@@ -116,7 +122,6 @@ const Login = () => {
           <div className="h-px bg-gray-200 flex-1" />
         </div>
 
-        {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="text-sm">Email</label>
@@ -130,7 +135,6 @@ const Login = () => {
               required
             />
           </div>
-
           <div>
             <label className="text-sm">Password</label>
             <input
@@ -154,11 +158,8 @@ const Login = () => {
         </form>
 
         <p className="text-sm text-gray-600 mt-4">
-          Don’t have an account?{" "}
-          <span
-            className="underline cursor-pointer"
-            onClick={() => navigate("/register/mentee")}
-          >
+          Don't have an account?{" "}
+          <span className="underline cursor-pointer" onClick={() => navigate("/register/mentee")}>
             Register
           </span>
         </p>

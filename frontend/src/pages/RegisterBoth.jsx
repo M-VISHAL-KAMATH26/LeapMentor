@@ -1,10 +1,15 @@
 // src/pages/RegisterBoth.jsx
-import { useState } from "react";
-import axios from "axios";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import useGoogleAuth from "../hooks/useGoogleAuth";
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const RegisterBoth = () => {
   const navigate = useNavigate();
+  const googleBtnRef = useRef(null);
+  const termsAcceptedRef = useRef(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -16,12 +21,23 @@ const RegisterBoth = () => {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
+  // ✅ Google auth via shared hook — both roles
+  useGoogleAuth({
+    btnRef: googleBtnRef,
+    termsAcceptedRef,
+    roles: ["mentor", "mentee"],
+    onSuccess: () => {
+      setMsg({ type: "success", text: "Google signup successful! Redirecting..." });
+      setTimeout(() => navigate("/"), 700);
+    },
+    onError: (text) => setMsg({ type: "error", text }),
+    onLoadingChange: setLoading,
+  });
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
+    if (name === "termsAccepted") termsAcceptedRef.current = checked;
+    setForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   };
 
   const handleSubmit = async (e) => {
@@ -36,87 +52,71 @@ const RegisterBoth = () => {
     try {
       setLoading(true);
 
-      const BASE_URL =
-        import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-
-      const payload = {
+      const res = await axios.post(`${BASE_URL}/api/auth/register`, {
         name: form.name.trim(),
         email: form.email.trim(),
         password: form.password,
         roles: ["mentor", "mentee"],
         termsAccepted: true,
-      };
+      });
 
-      const res = await axios.post(`${BASE_URL}/api/auth/register`, payload);
-
-      if (res.data?.token) {
-        localStorage.setItem("token", res.data.token);
-      }
+      if (res.data?.token) localStorage.setItem("token", res.data.token);
+      console.log("✅ Registered successfully!", res.data);
 
       setMsg({ type: "success", text: "Registered successfully! Redirecting..." });
-
       setTimeout(() => {
         navigate("/verify-email", { state: { email: form.email.trim() } });
       }, 800);
     } catch (err) {
-      const apiMsg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Something went wrong. Try again.";
+      const apiMsg = err?.response?.data?.message || err?.message || "Something went wrong.";
       setMsg({ type: "error", text: apiMsg });
     } finally {
       setLoading(false);
     }
   };
 
-  // Minimal placeholders (real OAuth redirect/flow later)
-  const handleSocial = (provider) => {
-    setMsg({
-      type: "error",
-      text: `${provider} login not wired yet (needs real OAuth flow).`,
-    });
+  const handleSocialPlaceholder = (provider) => {
+    setMsg({ type: "info", text: `${provider} login coming soon.` });
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md border rounded-xl p-6">
         <h1 className="text-2xl font-semibold">Register as Mentor + Mentee</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Create one account and use both roles.
-        </p>
+        <p className="text-sm text-gray-500 mt-1">Create one account and use both roles.</p>
 
-        {msg.text ? (
+        {msg.text && (
           <div
             className={`mt-4 text-sm rounded-md p-3 ${
               msg.type === "success"
                 ? "bg-green-50 text-green-700"
+                : msg.type === "info"
+                ? "bg-blue-50 text-blue-700"
                 : "bg-red-50 text-red-700"
             }`}
           >
             {msg.text}
           </div>
-        ) : null}
+        )}
 
-        {/* Social buttons */}
         <div className="mt-5 space-y-2">
+          {/* ✅ Real Google button */}
+          <div className={loading ? "opacity-60 pointer-events-none" : ""}>
+            <div ref={googleBtnRef} className="w-full" />
+          </div>
           <button
             type="button"
-            onClick={() => handleSocial("Google")}
+            onClick={() => handleSocialPlaceholder("LinkedIn")}
             className="w-full border rounded-lg py-2 text-sm"
-          >
-            Continue with Google
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSocial("LinkedIn")}
-            className="w-full border rounded-lg py-2 text-sm"
+            disabled={loading}
           >
             Continue with LinkedIn
           </button>
           <button
             type="button"
-            onClick={() => handleSocial("Apple")}
+            onClick={() => handleSocialPlaceholder("Apple")}
             className="w-full border rounded-lg py-2 text-sm"
+            disabled={loading}
           >
             Continue with Apple
           </button>
@@ -128,7 +128,6 @@ const RegisterBoth = () => {
           <div className="h-px bg-gray-200 flex-1" />
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="text-sm">Name</label>
@@ -141,7 +140,6 @@ const RegisterBoth = () => {
               required
             />
           </div>
-
           <div>
             <label className="text-sm">Email</label>
             <input
@@ -154,7 +152,6 @@ const RegisterBoth = () => {
               required
             />
           </div>
-
           <div>
             <label className="text-sm">Password</label>
             <input
@@ -167,6 +164,7 @@ const RegisterBoth = () => {
               minLength={6}
               required
             />
+            <p className="text-xs text-gray-400 mt-1">Minimum 6 characters</p>
           </div>
 
           <label className="flex items-start gap-2 text-sm mt-2">
@@ -195,10 +193,7 @@ const RegisterBoth = () => {
 
         <p className="text-sm text-gray-600 mt-4">
           Already have an account?{" "}
-          <span
-            className="underline cursor-pointer"
-            onClick={() => navigate("/login")}
-          >
+          <span className="underline cursor-pointer" onClick={() => navigate("/login")}>
             Login
           </span>
         </p>

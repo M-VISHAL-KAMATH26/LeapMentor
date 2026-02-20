@@ -46,6 +46,7 @@ mongoose
 =========================== */
 app.use("/api/auth", require("./routes/auth.routes"));
 app.use("/api/verification", require("./routes/verification.routes"));
+app.use("/api/users", require("./routes/user.routes"));
 
 app.get("/", (req, res) => res.send("🚀 LeapMentor API Running..."));
 

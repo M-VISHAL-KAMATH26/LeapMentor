@@ -1,13 +1,15 @@
 // src/pages/RegisterMentee.jsx
-import { useEffect, useRef, useState } from "react";
-import axios from "axios";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import useGoogleAuth from "../hooks/useGoogleAuth";
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
 const RegisterMentee = () => {
   const navigate = useNavigate();
-
   const googleBtnRef = useRef(null);
-  const googleInitializedRef = useRef(false);
+  const termsAcceptedRef = useRef(false);
 
   const [form, setForm] = useState({
     name: "",
@@ -19,77 +21,24 @@ const RegisterMentee = () => {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
-  const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
-  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  // ✅ Google auth via shared hook
+  useGoogleAuth({
+    btnRef: googleBtnRef,
+    termsAcceptedRef,
+    roles: ["mentee"],
+    onSuccess: () => {
+      setMsg({ type: "success", text: "Google signup successful! Redirecting..." });
+      setTimeout(() => navigate("/"), 700);
+    },
+    onError: (text) => setMsg({ type: "error", text }),
+    onLoadingChange: setLoading,
+  });
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: type === "checkbox" ? checked : value,
-    }));
+    if (name === "termsAccepted") termsAcceptedRef.current = checked;
+    setForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   };
-
-  // ✅ Real Google signup/login (GIS -> backend /api/auth/google)
-  useEffect(() => {
-    if (!window.google || !googleBtnRef.current) return;
-
-    if (!GOOGLE_CLIENT_ID) {
-      setMsg({ type: "error", text: "Missing VITE_GOOGLE_CLIENT_ID in frontend .env" });
-      return;
-    }
-
-    if (googleInitializedRef.current) return;
-    googleInitializedRef.current = true;
-
-    /* global google */
-    google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: async (response) => {
-        try {
-          setMsg({ type: "", text: "" });
-
-          // require terms acceptance for first-time Google signup
-          if (!form.termsAccepted) {
-            setMsg({ type: "error", text: "Please accept the terms, then continue with Google." });
-            return;
-          }
-
-          setLoading(true);
-
-          const res = await axios.post(`${BASE_URL}/api/auth/google`, {
-            credential: response.credential,
-            roles: ["mentee"],
-            termsAccepted: true,
-          });
-
-          if (res.data?.token) localStorage.setItem("token", res.data.token);
-
-          setMsg({ type: "success", text: "Google signup successful! Redirecting..." });
-
-          setTimeout(() => {
-            navigate("/");
-          }, 700);
-        } catch (err) {
-          const apiMsg =
-            err?.response?.data?.message ||
-            err?.response?.data?.error ||
-            err?.message ||
-            "Google signup failed";
-          setMsg({ type: "error", text: apiMsg });
-        } finally {
-          setLoading(false);
-        }
-      },
-    });
-
-    google.accounts.id.renderButton(googleBtnRef.current, {
-      theme: "outline",
-      size: "large",
-      width: "100%",
-      text: "continue_with",
-    });
-  }, [BASE_URL, GOOGLE_CLIENT_ID, form.termsAccepted, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -103,28 +52,23 @@ const RegisterMentee = () => {
     try {
       setLoading(true);
 
-      const payload = {
+      const res = await axios.post(`${BASE_URL}/api/auth/register`, {
         name: form.name.trim(),
         email: form.email.trim(),
         password: form.password,
         roles: ["mentee"],
         termsAccepted: true,
-      };
-
-      const res = await axios.post(`${BASE_URL}/api/auth/register`, payload);
+      });
 
       if (res.data?.token) localStorage.setItem("token", res.data.token);
+      console.log("✅ Registered successfully!", res.data);
 
       setMsg({ type: "success", text: "Registered successfully! Redirecting..." });
-
       setTimeout(() => {
         navigate("/verify-email", { state: { email: form.email.trim() } });
       }, 800);
     } catch (err) {
-      const apiMsg =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Something went wrong. Try again.";
+      const apiMsg = err?.response?.data?.message || err?.message || "Something went wrong.";
       setMsg({ type: "error", text: apiMsg });
     } finally {
       setLoading(false);
@@ -132,40 +76,38 @@ const RegisterMentee = () => {
   };
 
   const handleSocialPlaceholder = (provider) => {
-    setMsg({
-      type: "error",
-      text: `${provider} login not wired yet (needs real OAuth flow).`,
-    });
+    setMsg({ type: "info", text: `${provider} login coming soon.` });
   };
+
   return (
-   <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-md border rounded-xl p-6">
         <h1 className="text-2xl font-semibold">Register as Mentee</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Create your LeapMentor mentee account.
-        </p>
+        <p className="text-sm text-gray-500 mt-1">Create your LeapMentor mentee account.</p>
 
-        {msg.text ? (
+        {msg.text && (
           <div
             className={`mt-4 text-sm rounded-md p-3 ${
               msg.type === "success"
                 ? "bg-green-50 text-green-700"
+                : msg.type === "info"
+                ? "bg-blue-50 text-blue-700"
                 : "bg-red-50 text-red-700"
             }`}
           >
             {msg.text}
           </div>
-        ) : null}
-         <div className="mt-5 space-y-2">
-          {/* ✅ Real Google button */}
-          <div className={`${loading ? "opacity-60 pointer-events-none" : ""}`}>
+        )}
+
+        <div className="mt-5 space-y-2">
+          <div className={loading ? "opacity-60 pointer-events-none" : ""}>
             <div ref={googleBtnRef} className="w-full" />
           </div>
-       
           <button
             type="button"
             onClick={() => handleSocialPlaceholder("LinkedIn")}
             className="w-full border rounded-lg py-2 text-sm"
+            disabled={loading}
           >
             Continue with LinkedIn
           </button>
@@ -173,6 +115,7 @@ const RegisterMentee = () => {
             type="button"
             onClick={() => handleSocialPlaceholder("Apple")}
             className="w-full border rounded-lg py-2 text-sm"
+            disabled={loading}
           >
             Continue with Apple
           </button>
@@ -184,7 +127,6 @@ const RegisterMentee = () => {
           <div className="h-px bg-gray-200 flex-1" />
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="text-sm">Name</label>
@@ -197,7 +139,6 @@ const RegisterMentee = () => {
               required
             />
           </div>
-
           <div>
             <label className="text-sm">Email</label>
             <input
@@ -210,7 +151,6 @@ const RegisterMentee = () => {
               required
             />
           </div>
-
           <div>
             <label className="text-sm">Password</label>
             <input
@@ -223,6 +163,7 @@ const RegisterMentee = () => {
               minLength={6}
               required
             />
+            <p className="text-xs text-gray-400 mt-1">Minimum 6 characters</p>
           </div>
 
           <label className="flex items-start gap-2 text-sm mt-2">
@@ -251,16 +192,12 @@ const RegisterMentee = () => {
 
         <p className="text-sm text-gray-600 mt-4">
           Already have an account?{" "}
-          <span
-            className="underline cursor-pointer"
-            onClick={() => navigate("/login")}
-          >
+          <span className="underline cursor-pointer" onClick={() => navigate("/login")}>
             Login
           </span>
         </p>
       </div>
-      </div>
-    
+    </div>
   );
 };
 

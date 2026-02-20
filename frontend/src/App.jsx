@@ -8,12 +8,14 @@ import RegisterBoth from "./pages/RegisterBoth";
 import Login from "./pages/Login";
 import VerifyEmail from "./pages/VerifyEmail";
 import NotFound from "./pages/NotFound";
+import MentorDashboard from "./pages/MentorDashboard";
+import MenteeDashboard from "./pages/MenteeDashboard";
 
 const App = () => {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Home (you already have it in components) */}
+        {/* Home */}
         <Route path="/" element={<Home />} />
 
         {/* Auth */}
@@ -22,6 +24,10 @@ const App = () => {
         <Route path="/register/both" element={<RegisterBoth />} />
         <Route path="/login" element={<Login />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+
+        {/* Dashboards */}
+        <Route path="/dashboard/mentor" element={<MentorDashboard />} />
+        <Route path="/dashboard/mentee" element={<MenteeDashboard />} />
 
         {/* 404 */}
         <Route path="*" element={<NotFound />} />
