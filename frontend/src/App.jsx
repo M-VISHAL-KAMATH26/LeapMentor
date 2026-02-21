@@ -10,6 +10,7 @@ import VerifyEmail from "./pages/VerifyEmail";
 import NotFound from "./pages/NotFound";
 import MentorDashboard from "./pages/MentorDashboard";
 import MenteeDashboard from "./pages/MenteeDashboard";
+import MentorOnboarding from "./pages/MentorOnboarding";
 
 const App = () => {
   return (
@@ -24,6 +25,9 @@ const App = () => {
         <Route path="/register/both" element={<RegisterBoth />} />
         <Route path="/login" element={<Login />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+
+        {/* Onboarding */}
+        <Route path="/onboarding/mentor" element={<MentorOnboarding />} />
 
         {/* Dashboards */}
         <Route path="/dashboard/mentor" element={<MentorDashboard />} />
