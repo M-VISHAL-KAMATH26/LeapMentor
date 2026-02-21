@@ -1,75 +1,83 @@
 // src/pages/MentorDashboard.jsx
-import { useEffect, useState } from "react";
-import axios from "axios";
 import { useNavigate } from "react-router-dom";
-
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+import useMentorDashboard from "../hooks/useMentorDashboard";
+import ProfileCard from "../components/mentor/ProfileCard";
+import SkillsSection from "../components/mentor/SkillsSection";
+import ExperienceSection from "../components/mentor/ExperienceSection";
+import SocialLinks from "../components/mentor/SocialLinks";
+import MentorshipPrefs from "../components/mentor/MentorshipPrefs";
 
 const MentorDashboard = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [error, setError] = useState("");
+  const { user, profile, loading, error } = useMentorDashboard();
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      navigate("/login");
-      return;
-    }
+  // ✅ Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-400 text-sm">Loading your dashboard...</p>
+      </div>
+    );
+  }
 
-    axios
-      .get(`${BASE_URL}/api/users/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .then((res) => setUser(res.data))
-      .catch(() => {
-        setError("Failed to load user. Please login again.");
-        localStorage.removeItem("token");
-        setTimeout(() => navigate("/login"), 1500);
-      });
-  }, [navigate]);
-
+  // ✅ Error state
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-red-600 text-sm">{error}</p>
+        <p className="text-red-500 text-sm">{error}</p>
       </div>
     );
   }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-400 text-sm">Loading...</p>
-      </div>
-    );
-  }
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    navigate("/login");
+  };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md border rounded-xl p-6 space-y-3">
-        <h1 className="text-2xl font-semibold">Mentor Dashboard</h1>
-        <p className="text-sm text-gray-500">Logged in as:</p>
+    <div className="min-h-screen bg-gray-50 px-4 py-8">
+      <div className="max-w-2xl mx-auto space-y-4">
 
-        {/* ✅ Proof — shows this specific user's data from DB */}
-        <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
-          <p><span className="font-medium">Name:</span> {user.name}</p>
-          <p><span className="font-medium">Email:</span> {user.email}</p>
-          <p><span className="font-medium">Roles:</span> {user.roles?.join(", ")}</p>
-          <p><span className="font-medium">User ID:</span> {user._id}</p>
-          <p><span className="font-medium">Email Verified:</span> {user.isEmailVerified ? "Yes" : "No"}</p>
-          <p><span className="font-medium">Joined:</span> {new Date(user.createdAt).toLocaleDateString()}</p>
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold">Mentor Dashboard</h1>
+            <p className="text-sm text-gray-400">Welcome back, {user?.name}</p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => navigate("/onboarding/mentor")}
+              className="text-sm border rounded-lg px-4 py-2 hover:bg-gray-100"
+            >
+              Edit Profile
+            </button>
+            <button
+              onClick={handleLogout}
+              className="text-sm border rounded-lg px-4 py-2 text-red-600 hover:bg-red-50"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
-        <button
-          onClick={() => {
-            localStorage.removeItem("token");
-            navigate("/login");
-          }}
-          className="w-full border rounded-lg py-2 text-sm text-red-600 hover:bg-red-50"
-        >
-          Logout
-        </button>
+        {/* Profile Card */}
+        <ProfileCard user={user} profile={profile} />
+
+        {/* Experience */}
+        <ExperienceSection profile={profile} />
+
+        {/* Skills */}
+        <SkillsSection
+          coreSkills={profile?.coreSkills}
+          expertiseAreas={profile?.expertiseAreas}
+        />
+
+        {/* Mentorship Preferences */}
+        <MentorshipPrefs profile={profile} />
+
+        {/* Social Links */}
+        <SocialLinks profile={profile} />
+
       </div>
     </div>
   );
