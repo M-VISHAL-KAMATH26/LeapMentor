@@ -2,6 +2,7 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
+// ✅ Verifies JWT and attaches user to req.user
 const authenticate = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(" ")[1]; // Bearer <token>
@@ -18,4 +19,17 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-module.exports = authenticate;
+// ✅ Role guard — use after authenticate
+// Usage: router.get("/mentor-only", authenticate, requireRole("mentor"), handler)
+const requireRole = (...roles) => {
+  return (req, res, next) => {
+    const userRoles = req.user?.roles || [];
+    const hasRole = roles.some((role) => userRoles.includes(role));
+    if (!hasRole) {
+      return res.status(403).json({ message: "Access denied: insufficient role" });
+    }
+    next();
+  };
+};
+
+module.exports = { authenticate, requireRole };
